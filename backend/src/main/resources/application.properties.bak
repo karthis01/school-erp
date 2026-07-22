@@ -1,0 +1,37 @@
+# ===== Server =====
+server.port=8081
+
+# ===== Master database (MySQL) =====
+# Holds ONLY platform-level data: the school registry, active-session tracking, and the
+# super-admin account. Each individual school's data lives in its OWN database instead -
+# see the "schools" table (managed via /api/schools) for where each school's DB lives.
+app.master-datasource.jdbc-url=jdbc:mysql://localhost:3306/school_erp_master?createDatabaseIfNotExist=true&useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true
+app.master-datasource.username=root
+app.master-datasource.password=ADMIN
+app.master-datasource.driver-class-name=com.mysql.cj.jdbc.Driver
+
+# ===== JPA / Hibernate =====
+# hibernate.hbm2ddl.auto is set per-persistence-unit in MasterPersistenceConfig /
+# TenantPersistenceConfig, not here - see those classes for why.
+spring.jpa.show-sql=false
+spring.jpa.properties.hibernate.format_sql=true
+
+# ===== JWT =====
+# 256-bit+ secret. Change this in production and load from env var instead.
+app.jwt.secret=ChangeThisSuperSecretKeyForJwtSigningInProdEnvironment123456
+app.jwt.expiration-ms=86400000
+
+# ===== CORS =====
+app.cors.allowed-origins=http://localhost:5173
+
+# ===== File uploads (school logo) =====
+spring.servlet.multipart.max-file-size=5MB
+spring.servlet.multipart.max-request-size=5MB
+app.upload.dir=uploads
+
+# ===== Seed platform super-admin on first run (manages schools, no @school suffix) =====
+app.seed.superadmin.username=sysadmin
+app.seed.superadmin.password=sysadmin123
+
+spring.main.allow-circular-references=true
+spring.sql.init.mode=never

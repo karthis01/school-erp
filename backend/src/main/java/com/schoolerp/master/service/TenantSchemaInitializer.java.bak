@@ -1,0 +1,117 @@
+package com.schoolerp.master.service;
+
+import com.schoolerp.entity.*;
+import org.hibernate.boot.Metadata;
+import org.hibernate.boot.MetadataSources;
+import org.hibernate.boot.registry.StandardServiceRegistry;
+import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
+import org.hibernate.tool.schema.spi.SchemaManagementToolCoordinator;
+import org.springframework.stereotype.Component;
+import org.hibernate.boot.model.naming.CamelCaseToUnderscoresNamingStrategy;
+
+import javax.sql.DataSource;
+import java.sql.Connection;
+import java.sql.SQLException;
+import java.util.Map;
+
+/**
+ * When a brand-new school is registered, its database is empty. Because Hibernate only
+ * runs ddl-auto=update once, at application startup (see TenantPersistenceConfig), that
+ * won't create tables for schools registered afterwards. This class builds a one-off,
+ * throwaway Hibernate metadata model from the same @Entity classes and runs a CREATE
+ * against the new school's DataSource directly, using Hibernate's programmatic schema
+ * tooling entry point (SchemaManagementToolCoordinator - the modern replacement for the
+ * old, now-removed org.hibernate.tool.hbm2ddl.SchemaExport class).
+ *
+ * Existing schools whose database already has tables should be registered with
+ * initializeSchema=false to skip this step.
+ */
+@Component
+public class TenantSchemaInitializer {
+
+   /* public void createSchema(DataSource dataSource) {
+        try (Connection ignored = dataSource.getConnection()) {
+            // just verifying the connection works before we do anything destructive
+        } catch (SQLException e) {
+            throw new IllegalStateException("Could not connect to the new school's database: " + e.getMessage(), e);
+        }
+
+        StandardServiceRegistry registry = new StandardServiceRegistryBuilder()
+                .applySetting("hibernate.connection.datasource", dataSource)
+                .applySetting("hibernate.dialect", "org.hibernate.dialect.MySQLDialect")
+                .build();
+
+        try {
+            MetadataSources sources = new MetadataSources(registry)
+                    .addAnnotatedClass(User.class)
+                    .addAnnotatedClass(Staff.class)
+                    .addAnnotatedClass(SchoolClass.class)
+                    .addAnnotatedClass(Student.class)
+                    .addAnnotatedClass(Attendance.class)
+                    .addAnnotatedClass(FeeStructure.class)
+                    .addAnnotatedClass(FeePayment.class)
+                    .addAnnotatedClass(SchoolSettings.class);
+
+
+			Metadata metadata = sources.getMetadataBuilder()
+        .applyPhysicalNamingStrategy(new SpringPhysicalNamingStrategy())
+        .applyImplicitNamingStrategy(new SpringImplicitNamingStrategy())
+        .build();
+
+            Map<String, Object> settings = Map.of(
+                    "hibernate.hbm2ddl.auto", "create",
+                    "hibernate.hbm2ddl.halt_on_error", true
+            );
+
+            // The modern, non-deprecated way to run schema DDL programmatically in
+            // Hibernate 6+ (org.hibernate.tool.hbm2ddl.SchemaExport was removed).
+            SchemaManagementToolCoordinator.process(metadata, registry, settings, action -> {
+                // no delayed "create-drop" behaviour needed - we only ever CREATE here
+            });
+        } finally {
+            StandardServiceRegistryBuilder.destroy(registry);
+        }
+    }
+*/
+
+	public void createSchema(DataSource dataSource) {
+    try (Connection ignored = dataSource.getConnection()) {
+        // just verifying the connection works before we do anything destructive
+    } catch (SQLException e) {
+        throw new IllegalStateException("Could not connect to the new school's database: " + e.getMessage(), e);
+    }
+
+    StandardServiceRegistry registry = new StandardServiceRegistryBuilder()
+            .applySetting("hibernate.connection.datasource", dataSource)
+            .applySetting("hibernate.dialect", "org.hibernate.dialect.MySQLDialect")
+            .build();
+
+    try {
+        MetadataSources sources = new MetadataSources(registry)
+                .addAnnotatedClass(User.class)
+                .addAnnotatedClass(Staff.class)
+                .addAnnotatedClass(SchoolClass.class)
+                .addAnnotatedClass(Student.class)
+                .addAnnotatedClass(Attendance.class)
+                .addAnnotatedClass(FeeStructure.class)
+                .addAnnotatedClass(FeePayment.class)
+                .addAnnotatedClass(SchoolSettings.class);
+
+        Metadata metadata = sources.getMetadataBuilder()
+                .applyPhysicalNamingStrategy(new SpringPhysicalNamingStrategy())
+                .applyImplicitNamingStrategy(new SpringImplicitNamingStrategy())
+                .build();
+
+        Map<String, Object> settings = Map.of(
+                "hibernate.hbm2ddl.auto", "create",
+                "hibernate.hbm2ddl.halt_on_error", true
+        );
+
+        SchemaManagementToolCoordinator.process(metadata, registry, settings, action -> {
+            // no delayed "create-drop" behaviour needed - we only ever CREATE here
+        });
+    } finally {
+        StandardServiceRegistryBuilder.destroy(registry);
+    }
+}
+}

@@ -1,0 +1,57 @@
+package com.schoolerp.controller;
+
+import com.schoolerp.entity.Student;
+import com.schoolerp.service.StudentService;
+import jakarta.validation.Valid;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.util.List;
+
+@RestController
+@RequestMapping("/api/students")
+public class StudentController {
+
+    private final StudentService studentService;
+
+    public StudentController(StudentService studentService) {
+        this.studentService = studentService;
+    }
+
+    @GetMapping
+    public List<Student> getAll(@RequestParam(required = false) Long classId,
+                                 @RequestParam(required = false) String search) {
+        if (classId != null) return studentService.findByClass(classId);
+        if (search != null && !search.isBlank()) return studentService.search(search);
+        return studentService.findAll();
+    }
+
+    @GetMapping("/{id}")
+    public Student getById(@PathVariable Long id) {
+        return studentService.findById(id);
+    }
+
+    @PostMapping
+    public Student create(@Valid @RequestBody Student student) {
+        return studentService.create(student);
+    }
+
+    @PutMapping("/{id}")
+    public Student update(@PathVariable Long id, @Valid @RequestBody Student student) {
+        return studentService.update(id, student);
+    }
+
+    @DeleteMapping("/{id}")
+    public void delete(@PathVariable Long id) {
+        studentService.delete(id);
+    }
+
+    @PostMapping("/{id}/upload")
+    public Student upload(@PathVariable Long id, @RequestParam String type, @RequestParam("file") MultipartFile file) throws IOException {
+        return studentService.uploadDocument(id, type, file);
+    }
+
+	
+	
+}

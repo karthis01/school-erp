@@ -1,0 +1,26 @@
+@echo off
+REM Run from inside the backend's own console window.
+REM Auto-detects JAVA_HOME for JDK 17 under Eclipse Adoptium.
+
+set ADOPTIUM_DIR=C:\Program Files\Eclipse Adoptium
+set JAVA_HOME=
+
+for /f "delims=" %%D in ('dir "%ADOPTIUM_DIR%" /b /ad /o-n 2^>nul ^| findstr /i "jdk-17"') do (
+    if not defined JAVA_HOME set JAVA_HOME=%ADOPTIUM_DIR%\%%D
+)
+
+if not defined JAVA_HOME (
+    echo.
+    echo ERROR: Could not find a JDK 17 folder under "%ADOPTIUM_DIR%".
+    echo Edit run-backend.bat and set JAVA_HOME directly if needed.
+    echo.
+    pause
+    exit /b 1
+)
+
+set PATH=%JAVA_HOME%\bin;%PATH%
+echo Using JAVA_HOME=%JAVA_HOME%
+java -version
+
+cd /d %~dp0backend
+mvn spring-boot:run

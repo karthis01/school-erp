@@ -1,0 +1,140 @@
+package com.schoolerp.service;
+
+import com.schoolerp.entity.SchoolClass;
+import com.schoolerp.entity.Student;
+import com.schoolerp.exception.ResourceNotFoundException;
+import com.schoolerp.repository.SchoolClassRepository;
+import com.schoolerp.repository.StudentRepository;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+import org.springframework.web.multipart.MultipartFile;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+import java.util.function.BiConsumer;
+
+@Service
+public class StudentService {
+
+    private final StudentRepository studentRepository;
+    private final SchoolClassRepository schoolClassRepository;
+
+    @Value("${app.upload.dir}")
+    private String uploadDir;
+
+    private static final Map<String, BiConsumer<Student, String>> DOCUMENT_TYPES = Map.of(
+            "PHOTO", Student::setPhotoUrl,
+            "FATHER_PHOTO", Student::setFatherPhotoUrl,
+            "MOTHER_PHOTO", Student::setMotherPhotoUrl,
+            "AADHAR", Student::setAadharDocUrl,
+            "CASTE_CERTIFICATE", Student::setCasteCertificateUrl
+    );
+
+    public StudentService(StudentRepository studentRepository, SchoolClassRepository schoolClassRepository) {
+        this.studentRepository = studentRepository;
+        this.schoolClassRepository = schoolClassRepository;
+    }
+
+    public List<Student> findAll() {
+        return studentRepository.findAll();
+    }
+
+    public Student findById(Long id) {
+        return studentRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Student not found with id: " + id));
+    }
+
+    public List<Student> findByClass(Long classId) {
+        return studentRepository.findBySchoolClassId(classId);
+    }
+
+    public List<Student> search(String query) {
+        return studentRepository.findByFirstNameContainingIgnoreCaseOrLastNameContainingIgnoreCase(query, query);
+    }
+
+    public Student create(Student student) {
+        if (student.getSchoolClass() != null && student.getSchoolClass().getId() != null) {
+            SchoolClass sc = schoolClassRepository.findById(student.getSchoolClass().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Class not found"));
+            student.setSchoolClass(sc);
+        }
+        return studentRepository.save(student);
+    }
+
+    public Student update(Long id, Student updated) {
+        Student existing = findById(id);
+        existing.setFirstName(updated.getFirstName());
+        existing.setLastName(updated.getLastName());
+        existing.setDateOfBirth(updated.getDateOfBirth());
+        existing.setGender(updated.getGender());
+        existing.setGuardianName(updated.getGuardianName());
+        existing.setGuardianPhone(updated.getGuardianPhone());
+        existing.setEmail(updated.getEmail());
+        existing.setAddress(updated.getAddress());
+        existing.setStatus(updated.getStatus());
+        existing.setFatherName(updated.getFatherName());
+        existing.setMotherName(updated.getMotherName());
+        existing.setBloodGroup(updated.getBloodGroup());
+        existing.setAadharNumber(updated.getAadharNumber());
+        existing.setCasteCategory(updated.getCasteCategory());
+        if (updated.getSchoolClass() != null && updated.getSchoolClass().getId() != null) {
+            SchoolClass sc = schoolClassRepository.findById(updated.getSchoolClass().getId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Class not found"));
+            existing.setSchoolClass(sc);
+        }
+        return studentRepository.save(existing);
+    }
+
+    public void delete(Long id) {
+        if (!studentRepository.existsById(id)) {
+            throw new ResourceNotFoundException("Student not found with id: " + id);
+        }
+        studentRepository.deleteById(id);
+    }
+
+    public Student uploadDocument(Long id, String type, MultipartFile file) throws IOException {
+        if (file == null || file.isEmpty()) {
+            throw new IllegalArgumentException("No file was uploaded");
+        }
+        BiConsumer<Student, String> setter = DOCUMENT_TYPES.get(type);
+        if (setter == null) {
+            throw new IllegalArgumentException("Unknown document type: " + type);
+        }
+
+        Student student = findById(id);
+
+        Path studentDir = Paths.get(uploadDir, "students", String.valueOf(id));
+        Files.createDirectories(studentDir);
+
+        String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : type;
+        String extension = "";
+        int dotIndex = originalName.lastIndexOf('.');
+        if (dotIndex >= 0) {
+            extension = originalName.substring(dotIndex);
+        }
+        String filename = type.toLowerCase() + "-" + UUID.randomUUID() + extension;
+
+        Path target = studentDir.resolve(filename);
+        Files.copy(file.getInputStream(), target, StandardCopyOption.REPLACE_EXISTING);
+
+        setter.accept(student, "/uploads/students/" + id + "/" + filename);
+        return studentRepository.save(student);
+    }
+
+	public Student admitStudent(StudentCreateRequest request, MultipartFile studentPhoto,
+                             MultipartFile parentPhoto, MultipartFile attachment) {
+    Student student = /* map request -> new Student(), as your existing create logic already does */;
+
+    student.setStudentPhotoPath(fileStorageService.store(studentPhoto, "students/photos"));
+    student.setParentPhotoPath(fileStorageService.store(parentPhoto, "students/parent-photos"));
+    student.setAttachmentPath(fileStorageService.store(attachment, "students/attachments"));
+
+    return studentRepository.save(student);
+	}
+}

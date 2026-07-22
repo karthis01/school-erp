@@ -1,0 +1,456 @@
+import { useEffect, useState } from 'react';
+import Layout from '../components/Layout';
+import Modal from '../components/Modal';
+import api from '../api/axios';
+import { exportToExcel } from '../utils/exportExcel';
+
+const emptyForm = {
+  admissionNumber: '', firstName: '', lastName: '', dateOfBirth: '', gender: '',
+  guardianName: '', guardianPhone: '', email: '', address: '', classId: '',
+  admissionDate: '', status: 'ACTIVE',
+  fatherName: '', motherName: '', bloodGroup: '', aadharNumber: '', casteCategory: '',
+};
+
+const emptyFiles = { photoUrl: '', fatherPhotoUrl: '', motherPhotoUrl: '', aadharDocUrl: '', casteCertificateUrl: '' };
+
+const BLOOD_GROUPS = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+
+// Strip the trailing /api so we can build a direct URL to static files like /uploads/students/1/photo-xyz.png
+const API_ORIGIN = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080/api').replace(/\/api\/?$/, '');
+
+function UploadField({ label, url, type, studentId, isImage, onUploaded }) {
+  const [file, setFile] = useState(null);
+  const [preview, setPreview] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+
+  function handleChange(e) {
+    const f = e.target.files[0];
+    if (!f) return;
+    setFile(f);
+    setUploadError('');
+    if (isImage) setPreview(URL.createObjectURL(f));
+  }
+
+  async function handleUpload() {
+    if (!file) return;
+    setUploading(true);
+    setUploadError('');
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const { data } = await api.post(`/students/${studentId}/upload?type=${type}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      onUploaded(data);
+      setFile(null);
+      setPreview('');
+    } catch (err) {
+      setUploadError('Upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  const displayUrl = preview || (url ? `${API_ORIGIN}${url}` : '');
+
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {isImage && (
+          <div style={{
+            width: 44, height: 44, borderRadius: 4, border: '1px solid var(--color-ledger-line)',
+            overflow: 'hidden', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            {displayUrl ? (
+              <img src={displayUrl} alt={label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <span style={{ fontSize: 9, color: 'var(--color-ink-soft)' }}>No photo</span>
+            )}
+          </div>
+        )}
+        {!isImage && url && !file && (
+          <a href={`${API_ORIGIN}${url}`} target="_blank" rel="noreferrer" style={{ fontSize: 12 }}>View uploaded file</a>
+        )}
+        <input type="file" accept={isImage ? 'image/*' : 'image/*,.pdf'} onChange={handleChange} style={{ fontSize: 12, maxWidth: 150 }} />
+        <button type="button" className="btn btn-ghost" disabled={!file || uploading} onClick={handleUpload}>
+          {uploading ? 'Uploading…' : 'Upload'}
+        </button>
+      </div>
+      {uploadError && <div style={{ color: 'var(--color-danger)', fontSize: 11, marginTop: 4 }}>{uploadError}</div>}
+    </div>
+  );
+}
+
+export default function Students() {
+  const [students, setStudents] = useState([]);
+  const [classes, setClasses] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [showModal, setShowModal] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [files, setFiles] = useState(emptyFiles);
+  const [editingId, setEditingId] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [search, setSearch] = useState('');
+  const [classFilter, setClassFilter] = useState('');
+  const [modalMessage, setModalMessage] = useState('');
+
+  async function loadData() {
+    setLoading(true);
+    try {
+      const params = {};
+      if (classFilter) params.classId = classFilter;
+      if (search) params.search = search;
+      const [studentsRes, classesRes] = await Promise.all([
+        api.get('/students', { params }),
+        api.get('/classes'),
+      ]);
+      setStudents(studentsRes.data);
+      setClasses(classesRes.data);
+    } catch (err) {
+      setError('Failed to load students.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadData(); }, [classFilter]);
+
+  function handleSearchSubmit(e) {
+    e.preventDefault();
+    loadData();
+  }
+
+  function openCreate() {
+    setForm(emptyForm);
+    setFiles(emptyFiles);
+    setEditingId(null);
+    setModalMessage('');
+    setShowModal(true);
+  }
+
+  function openEdit(s) {
+    setForm({
+      admissionNumber: s.admissionNumber, firstName: s.firstName, lastName: s.lastName,
+      dateOfBirth: s.dateOfBirth || '', gender: s.gender || '', guardianName: s.guardianName || '',
+      guardianPhone: s.guardianPhone || '', email: s.email || '', address: s.address || '',
+      classId: s.schoolClass?.id || '', admissionDate: s.admissionDate || '', status: s.status,
+      fatherName: s.fatherName || '', motherName: s.motherName || '', bloodGroup: s.bloodGroup || '',
+      aadharNumber: s.aadharNumber || '', casteCategory: s.casteCategory || '',
+    });
+    setFiles({
+      photoUrl: s.photoUrl || '', fatherPhotoUrl: s.fatherPhotoUrl || '', motherPhotoUrl: s.motherPhotoUrl || '',
+      aadharDocUrl: s.aadharDocUrl || '', casteCertificateUrl: s.casteCertificateUrl || '',
+    });
+    setEditingId(s.id);
+    setModalMessage('');
+    setShowModal(true);
+  }
+
+  function handleFileUploaded(data) {
+    setFiles({
+      photoUrl: data.photoUrl || '', fatherPhotoUrl: data.fatherPhotoUrl || '', motherPhotoUrl: data.motherPhotoUrl || '',
+      aadharDocUrl: data.aadharDocUrl || '', casteCertificateUrl: data.casteCertificateUrl || '',
+    });
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError('');
+    const payload = {
+      admissionNumber: form.admissionNumber,
+      firstName: form.firstName,
+      lastName: form.lastName,
+      dateOfBirth: form.dateOfBirth || null,
+      gender: form.gender,
+      guardianName: form.guardianName,
+      guardianPhone: form.guardianPhone,
+      email: form.email,
+      address: form.address,
+      admissionDate: form.admissionDate || null,
+      status: form.status,
+      schoolClass: form.classId ? { id: Number(form.classId) } : null,
+      fatherName: form.fatherName,
+      motherName: form.motherName,
+      bloodGroup: form.bloodGroup,
+      aadharNumber: form.aadharNumber,
+      casteCategory: form.casteCategory,
+    };
+    try {
+      if (editingId) {
+        await api.put(`/students/${editingId}`, payload);
+        setShowModal(false);
+        loadData();
+      } else {
+        const { data } = await api.post('/students', payload);
+        setEditingId(data.id);
+        setModalMessage('Student admitted. You can now upload photo & documents below, then close when done.');
+        loadData();
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to save student.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id) {
+    if (!confirm('Remove this student record?')) return;
+    try {
+      await api.delete(`/students/${id}`);
+      loadData();
+    } catch (err) {
+      setError('Failed to delete student.');
+    }
+  }
+
+  const statusPill = { ACTIVE: 'pill-active', INACTIVE: 'pill-warn', GRADUATED: 'pill-active', TRANSFERRED: 'pill-danger' };
+
+  function handleExport() {
+    exportToExcel('students', [
+      { label: 'Admission #', key: 'admissionNumber' },
+      { label: 'First Name', key: 'firstName' },
+      { label: 'Last Name', key: 'lastName' },
+      { label: 'Class', key: (s) => (s.schoolClass ? `${s.schoolClass.className} - ${s.schoolClass.section}` : '') },
+      { label: 'Guardian', key: 'guardianName' },
+      { label: 'Phone', key: 'guardianPhone' },
+      { label: 'Email', key: 'email' },
+      { label: 'Status', key: 'status' },
+      { label: "Father's Name", key: 'fatherName' },
+      { label: "Mother's Name", key: 'motherName' },
+      { label: 'Blood Group', key: 'bloodGroup' },
+      { label: 'Aadhar Number', key: 'aadharNumber' },
+      { label: 'Caste Category', key: 'casteCategory' },
+    ], students);
+  }
+
+  return (
+    <Layout eyebrow="Admissions" title="Student Directory">
+      {error && <div className="error-banner">{error}</div>}
+
+      <div className="page-header">
+        <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: 8 }}>
+          <input
+            placeholder="Search by name…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            style={{ padding: '8px 10px', border: '1px solid var(--color-ledger-line)', borderRadius: 4, fontSize: 13.5, width: 200 }}
+          />
+          <select
+            value={classFilter}
+            onChange={(e) => setClassFilter(e.target.value)}
+            style={{ padding: '8px 10px', border: '1px solid var(--color-ledger-line)', borderRadius: 4, fontSize: 13.5 }}
+          >
+            <option value="">All Classes</option>
+            {classes.map((c) => (
+              <option key={c.id} value={c.id}>{c.className} - {c.section}</option>
+            ))}
+          </select>
+          <button type="submit" className="btn btn-ghost">Search</button>
+        </form>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-ghost" onClick={handleExport} disabled={students.length === 0}>Export to Excel</button>
+          <button className="btn btn-primary" onClick={openCreate}>+ Admit Student</button>
+        </div>
+      </div>
+
+      <div className="card">
+        {loading ? (
+          <div className="empty-state">Loading students…</div>
+        ) : students.length === 0 ? (
+          <div className="empty-state">No students found.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th></th><th>Admission #</th><th>Name</th><th>Class</th><th>Guardian</th><th>Phone</th><th>Status</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {students.map((s) => (
+                <tr key={s.id}>
+                  <td>
+                    <div style={{
+                      width: 30, height: 30, borderRadius: '50%', overflow: 'hidden', flexShrink: 0,
+                      background: 'var(--color-ledger-line)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: 11, color: 'var(--color-ink-soft)',
+                    }}>
+                      {s.photoUrl ? (
+                        <img src={`${API_ORIGIN}${s.photoUrl}`} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      ) : (
+                        (s.firstName?.[0] || '') + (s.lastName?.[0] || '')
+                      )}
+                    </div>
+                  </td>
+                  <td style={{ fontFamily: 'var(--font-mono)' }}>{s.admissionNumber}</td>
+                  <td>{s.firstName} {s.lastName}</td>
+                  <td>{s.schoolClass ? `${s.schoolClass.className} - ${s.schoolClass.section}` : '—'}</td>
+                  <td>{s.guardianName || '—'}</td>
+                  <td>{s.guardianPhone || '—'}</td>
+                  <td><span className={`pill ${statusPill[s.status] || 'pill-active'}`}>{s.status}</span></td>
+                  <td style={{ textAlign: 'right' }}>
+                    <button className="btn btn-ghost" onClick={() => openEdit(s)}>Edit</button>{' '}
+                    <button className="btn btn-danger" onClick={() => handleDelete(s.id)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {showModal && (
+        <Modal title={modalMessage ? 'Complete Admission' : (editingId ? 'Edit Student' : 'Admit Student')} onClose={() => setShowModal(false)}>
+          {modalMessage && (
+            <div className="error-banner" style={{ background: 'var(--color-primary-soft)', color: 'var(--color-primary-dark)', marginBottom: 14 }}>
+              {modalMessage}
+            </div>
+          )}
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+           <div style={{ borderTop: '1px solid var(--color-ledger-line)', paddingTop: 14 }}>
+  <h4 style={{ margin: '0 0 10px' }}>📘 Student Information</h4>
+  <div className="form-grid">
+    <div className="field">
+      <label>Admission Number</label>
+      <input required value={form.admissionNumber} onChange={(e) => setForm({ ...form, admissionNumber: e.target.value })} placeholder="ADM-2026-001" />
+    </div>
+    <div className="field">
+      <label>Class</label>
+      <select value={form.classId} onChange={(e) => setForm({ ...form, classId: e.target.value })}>
+        <option value="">— Unassigned —</option>
+        {classes.map((c) => (
+          <option key={c.id} value={c.id}>{c.className} - {c.section}</option>
+        ))}
+      </select>
+    </div>
+    <div className="field">
+      <label>First Name</label>
+      <input required value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} />
+    </div>
+    <div className="field">
+      <label>Last Name</label>
+      <input required value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} />
+    </div>
+    <div className="field">
+      <label>Date of Birth</label>
+      <input type="date" value={form.dateOfBirth} onChange={(e) => setForm({ ...form, dateOfBirth: e.target.value })} />
+    </div>
+    <div className="field">
+      <label>Gender</label>
+      <select value={form.gender} onChange={(e) => setForm({ ...form, gender: e.target.value })}>
+        <option value="">— Select —</option>
+        <option value="Male">Male</option>
+        <option value="Female">Female</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+    <div className="field">
+      <label>Admission Date</label>
+      <input type="date" value={form.admissionDate} onChange={(e) => setForm({ ...form, admissionDate: e.target.value })} />
+    </div>
+    <div className="field">
+      <label>Status</label>
+      <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+        <option value="ACTIVE">Active</option>
+        <option value="INACTIVE">Inactive</option>
+        <option value="GRADUATED">Graduated</option>
+        <option value="TRANSFERRED">Transferred</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+<div style={{ borderTop: '1px solid var(--color-ledger-line)', paddingTop: 14 }}>
+  <h4 style={{ margin: '0 0 10px' }}>👨‍👩‍👦 Parent Information</h4>
+  <div className="form-grid">
+    <div className="field">
+      <label>Father's Name</label>
+      <input value={form.fatherName} onChange={(e) => setForm({ ...form, fatherName: e.target.value })} />
+    </div>
+    <div className="field">
+      <label>Mother's Name</label>
+      <input value={form.motherName} onChange={(e) => setForm({ ...form, motherName: e.target.value })} />
+    </div>
+    <div className="field">
+      <label>Guardian Name</label>
+      <input value={form.guardianName} onChange={(e) => setForm({ ...form, guardianName: e.target.value })} />
+    </div>
+    <div className="field">
+      <label>Guardian Phone</label>
+      <input value={form.guardianPhone} onChange={(e) => setForm({ ...form, guardianPhone: e.target.value })} />
+    </div>
+  </div>
+</div>
+
+<div style={{ borderTop: '1px solid var(--color-ledger-line)', paddingTop: 14 }}>
+  <h4 style={{ margin: '0 0 10px' }}>📞 Contact Information</h4>
+  <div className="form-grid">
+    <div className="field">
+      <label>Email</label>
+      <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+    </div>
+    <div className="field" style={{ gridColumn: 'span 2' }}>
+      <label>Address</label>
+      <textarea rows={2} value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} />
+    </div>
+  </div>
+</div>
+
+<div style={{ borderTop: '1px solid var(--color-ledger-line)', paddingTop: 14 }}>
+  <h4 style={{ margin: '0 0 10px' }}>📄 Additional Information</h4>
+  <div className="form-grid">
+    <div className="field">
+      <label>Blood Group</label>
+      <select value={form.bloodGroup} onChange={(e) => setForm({ ...form, bloodGroup: e.target.value })}>
+        <option value="">— Select —</option>
+        {BLOOD_GROUPS.map((bg) => (
+          <option key={bg} value={bg}>{bg}</option>
+        ))}
+      </select>
+    </div>
+    <div className="field">
+      <label>Aadhar Number</label>
+      <input value={form.aadharNumber} onChange={(e) => setForm({ ...form, aadharNumber: e.target.value })} placeholder="XXXX-XXXX-XXXX" />
+    </div>
+    <div className="field">
+      <label>Caste Category</label>
+      <select value={form.casteCategory} onChange={(e) => setForm({ ...form, casteCategory: e.target.value })}>
+        <option value="">— Select —</option>
+        <option value="General">General</option>
+        <option value="OBC">OBC</option>
+        <option value="SC">SC</option>
+        <option value="ST">ST</option>
+        <option value="Other">Other</option>
+      </select>
+    </div>
+  </div>
+</div>
+
+            {editingId && (
+              <div style={{ borderTop: '1px solid var(--color-ledger-line)', paddingTop: 14 }}>
+                <h4 style={{ margin: '0 0 10px' }}>Photos & Documents</h4>
+                <div className="form-grid">
+                  <UploadField label="Student Photo" isImage type="PHOTO" studentId={editingId} url={files.photoUrl} onUploaded={handleFileUploaded} />
+                  <UploadField label="Father's Photo" isImage type="FATHER_PHOTO" studentId={editingId} url={files.fatherPhotoUrl} onUploaded={handleFileUploaded} />
+                  <UploadField label="Mother's Photo" isImage type="MOTHER_PHOTO" studentId={editingId} url={files.motherPhotoUrl} onUploaded={handleFileUploaded} />
+                  <UploadField label="Aadhar Card" type="AADHAR" studentId={editingId} url={files.aadharDocUrl} onUploaded={handleFileUploaded} />
+                  <UploadField label="Caste Certificate" type="CASTE_CERTIFICATE" studentId={editingId} url={files.casteCertificateUrl} onUploaded={handleFileUploaded} />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowModal(false)}>{modalMessage ? 'Close' : 'Cancel'}</button>
+              {!modalMessage && (
+                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Save Student'}</button>
+              )}
+            </div>
+          </form>
+        </Modal>
+      )}
+    </Layout>
+  );
+}
